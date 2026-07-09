@@ -46,7 +46,9 @@ def fetch_posts_from_channel(username: str, hours: int = 36) -> list[dict]:
     но дополнительно фильтруем по дате если она доступна."""
     url = f"{RSSHUB_BASE}/{username}"
     feed = feedparser.parse(url)
+    print(f"     [debug] entries={len(feed.entries)} status={feed.get('status','?')} bozo={feed.get('bozo')} err={feed.get('bozo_exception','')}")
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    print(f"     [debug] cutoff={cutoff}")
     posts = []
     for entry in feed.entries:
         published = entry.get("published_parsed")
