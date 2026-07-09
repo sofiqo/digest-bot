@@ -34,7 +34,7 @@ OTHER_CHANNELS = [
     "zeniasofronovHQ", "turyatka", "concertzaal", "coachpolishuk", "ohwrld",
 ]
 
-RSSHUB_BASE = "https://rsshub.app/telegram/channel"
+RSSHUB_BASE = "https://rsshub.rss.workers.dev/telegram/channel"
 
 # ─────────────────────────────────────────
 #  ШАГИ
