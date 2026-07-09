@@ -40,8 +40,10 @@ RSSHUB_BASE = "https://rsshub.app/telegram/channel"
 #  ШАГИ
 # ─────────────────────────────────────────
 
-def fetch_posts_from_channel(username: str, hours: int = 24) -> list[dict]:
-    """Читает RSS канала и возвращает посты за последние hours часов."""
+def fetch_posts_from_channel(username: str, hours: int = 36) -> list[dict]:
+    """Читает RSS канала и возвращает посты за последние hours часов.
+    RSSHub уже возвращает только свежие посты, поэтому берём всё что есть
+    но дополнительно фильтруем по дате если она доступна."""
     url = f"{RSSHUB_BASE}/{username}"
     feed = feedparser.parse(url)
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -49,16 +51,30 @@ def fetch_posts_from_channel(username: str, hours: int = 24) -> list[dict]:
     for entry in feed.entries:
         published = entry.get("published_parsed")
         if published:
-            pub_dt = datetime(*published[:6], tzinfo=timezone.utc)
-            if pub_dt < cutoff:
-                continue
+            try:
+                pub_dt = datetime(*published[:6], tzinfo=timezone.utc)
+                if pub_dt < cutoff:
+                    continue
+            except Exception:
+                pass  # если дата кривая — берём пост
         text = entry.get("summary", "") or entry.get("title", "")
         # убираем HTML-теги
         text = re.sub(r"<[^>]+>", " ", text).strip()
         link = entry.get("link", f"https://t.me/{username}")
         title = entry.get("title", "")
         title = re.sub(r"<[^>]+>", " ", title).strip()
-        posts.append({"text": text, "link": link, "title": title})
+        if text:
+            posts.append({"text": text, "link": link, "title": title})
+    # Если после фильтрации по дате ничего нет — берём последние 5 постов из RSS
+    if not posts and feed.entries:
+        for entry in feed.entries[:5]:
+            text = entry.get("summary", "") or entry.get("title", "")
+            text = re.sub(r"<[^>]+>", " ", text).strip()
+            link = entry.get("link", f"https://t.me/{username}")
+            title = entry.get("title", "")
+            title = re.sub(r"<[^>]+>", " ", title).strip()
+            if text:
+                posts.append({"text": text, "link": link, "title": title})
     return posts
 
 
