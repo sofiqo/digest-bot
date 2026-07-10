@@ -235,21 +235,46 @@ def build_html(design_cards: list[dict], other_cards: list[dict]) -> str:
 # ─────────────────────────────────────────
 
 def deploy_to_netlify(html: str, site_id: str, token: str) -> str:
-    import urllib.request, zipfile, io
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("index.html", html.encode("utf-8"))
-    buf.seek(0)
-    zip_bytes = buf.read()
-    url = f"https://api.netlify.com/api/v1/sites/{site_id}/deploys"
-    req = urllib.request.Request(
-        url, data=zip_bytes,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/zip"},
+    import urllib.request, hashlib
+
+    html_bytes = html.encode("utf-8")
+    sha1 = hashlib.sha1(html_bytes).hexdigest()
+
+    deploy_payload = json.dumps({
+        "files": {"/index.html": sha1},
+        "async": False
+    }).encode("utf-8")
+
+    req1 = urllib.request.Request(
+        f"https://api.netlify.com/api/v1/sites/{site_id}/deploys",
+        data=deploy_payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
         method="POST",
     )
-    with urllib.request.urlopen(req) as resp:
-        data = json.loads(resp.read())
-    return data.get("deploy_ssl_url") or data.get("url", "")
+    with urllib.request.urlopen(req1) as resp:
+        deploy_data = json.loads(resp.read())
+
+    deploy_id = deploy_data["id"]
+    required = deploy_data.get("required", [])
+    print(f"     [debug] deploy_id={deploy_id} required={required}")
+
+    if required:
+        req2 = urllib.request.Request(
+            f"https://api.netlify.com/api/v1/deploys/{deploy_id}/files/index.html",
+            data=html_bytes,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "text/html; charset=utf-8",
+            },
+            method="PUT",
+        )
+        with urllib.request.urlopen(req2) as resp:
+            resp.read()
+
+    return deploy_data.get("ssl_url") or deploy_data.get("url") or ""
 
 
 async def send_telegram_message(token: str, chat_id: str, text: str):
