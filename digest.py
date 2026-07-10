@@ -1,14 +1,16 @@
-import feedparser
 import anthropic
 import os
 import json
 import re
+import time
+import requests
+from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
 from telegram import Bot
 import asyncio
 
 # ─────────────────────────────────────────
-#  НАСТРОЙКИ — заполни своими значениями
+#  НАСТРОЙКИ
 # ─────────────────────────────────────────
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "ВАШ_ТОКЕН_БОТА")
@@ -34,54 +36,79 @@ OTHER_CHANNELS = [
     "zeniasofronovHQ", "turyatka", "concertzaal", "coachpolishuk", "ohwrld",
 ]
 
-RSSHUB_BASE = "https://rsshub.rss.workers.dev/telegram/channel"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+}
 
 # ─────────────────────────────────────────
-#  ШАГИ
+#  ПАРСИНГ t.me/s/username
 # ─────────────────────────────────────────
 
 def fetch_posts_from_channel(username: str, hours: int = 36) -> list[dict]:
-    """Читает RSS канала и возвращает посты за последние hours часов.
-    RSSHub уже возвращает только свежие посты, поэтому берём всё что есть
-    но дополнительно фильтруем по дате если она доступна."""
-    url = f"{RSSHUB_BASE}/{username}"
-    feed = feedparser.parse(url)
-    print(f"     [debug] entries={len(feed.entries)} status={feed.get('status','?')} bozo={feed.get('bozo')} err={feed.get('bozo_exception','')}")
+    """Парсит веб-версию Telegram-канала и возвращает посты за последние hours часов."""
+    url = f"https://t.me/s/{username}"
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        print(f"     [debug] status={resp.status_code} len={len(resp.text)}")
+        if resp.status_code != 200:
+            return []
+    except Exception as e:
+        print(f"     [debug] request error: {e}")
+        return []
+
+    soup = BeautifulSoup(resp.text, "html.parser")
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-    print(f"     [debug] cutoff={cutoff}")
     posts = []
-    for entry in feed.entries:
-        published = entry.get("published_parsed")
-        if published:
+
+    for msg in soup.select(".tgme_widget_message"):
+        # Дата поста
+        time_tag = msg.select_one(".tgme_widget_message_date time")
+        if time_tag and time_tag.get("datetime"):
             try:
-                pub_dt = datetime(*published[:6], tzinfo=timezone.utc)
+                pub_dt = datetime.fromisoformat(time_tag["datetime"].replace("Z", "+00:00"))
                 if pub_dt < cutoff:
                     continue
             except Exception:
-                pass  # если дата кривая — берём пост
-        text = entry.get("summary", "") or entry.get("title", "")
-        # убираем HTML-теги
-        text = re.sub(r"<[^>]+>", " ", text).strip()
-        link = entry.get("link", f"https://t.me/{username}")
-        title = entry.get("title", "")
-        title = re.sub(r"<[^>]+>", " ", title).strip()
-        if text:
-            posts.append({"text": text, "link": link, "title": title})
-    # Если после фильтрации по дате ничего нет — берём последние 5 постов из RSS
-    if not posts and feed.entries:
-        for entry in feed.entries[:5]:
-            text = entry.get("summary", "") or entry.get("title", "")
-            text = re.sub(r"<[^>]+>", " ", text).strip()
-            link = entry.get("link", f"https://t.me/{username}")
-            title = entry.get("title", "")
-            title = re.sub(r"<[^>]+>", " ", title).strip()
-            if text:
-                posts.append({"text": text, "link": link, "title": title})
+                pass
+
+        # Текст поста
+        text_tag = msg.select_one(".tgme_widget_message_text")
+        text = text_tag.get_text(separator=" ", strip=True) if text_tag else ""
+        if not text:
+            continue
+
+        # Ссылка на пост
+        link_tag = msg.select_one(".tgme_widget_message_date")
+        link = link_tag["href"] if link_tag and link_tag.get("href") else f"https://t.me/{username}"
+
+        posts.append({"text": text, "link": link})
+
+    print(f"     [debug] found {len(posts)} posts")
     return posts
 
 
+def get_channel_title(username: str) -> str:
+    """Берёт официальное название канала с веб-страницы."""
+    url = f"https://t.me/s/{username}"
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        if resp.status_code != 200:
+            return username
+        soup = BeautifulSoup(resp.text, "html.parser")
+        title_tag = soup.select_one(".tgme_channel_info_header_title")
+        if title_tag:
+            return title_tag.get_text(strip=True)
+    except Exception:
+        pass
+    return username
+
+
+# ─────────────────────────────────────────
+#  СУММАРИЗАЦИЯ
+# ─────────────────────────────────────────
+
 def summarise_channel(client: anthropic.Anthropic, channel: str, posts: list[dict]) -> dict | None:
-    """Отправляет посты в Claude и получает саммари. Возвращает None если только реклама."""
     posts_text = "\n\n---\n\n".join(
         f"Пост {i+1} (ссылка: {p['link']}):\n{p['text']}"
         for i, p in enumerate(posts)
@@ -119,19 +146,11 @@ def summarise_channel(client: anthropic.Anthropic, channel: str, posts: list[dic
     }
 
 
-def get_channel_title(username: str) -> str:
-    """Берёт официальное название канала из RSS."""
-    url = f"{RSSHUB_BASE}/{username}"
-    feed = feedparser.parse(url)
-    title = feed.feed.get("title", username)
-    title = re.sub(r"<[^>]+>", "", title).strip()
-    # RSSHub часто добавляет «- Telegram» в конец
-    title = re.sub(r"\s*[-–]\s*Telegram\s*$", "", title, flags=re.IGNORECASE)
-    return title or username
-
+# ─────────────────────────────────────────
+#  HTML
+# ─────────────────────────────────────────
 
 def build_html(design_cards: list[dict], other_cards: list[dict]) -> str:
-    """Собирает HTML-страницу дайджеста."""
     today = datetime.now()
     weekdays_ru = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
     months_ru   = ["января","февраля","марта","апреля","мая","июня",
@@ -140,7 +159,7 @@ def build_html(design_cards: list[dict], other_cards: list[dict]) -> str:
     total_channels = len(design_cards) + len(other_cards)
     time_str = today.strftime("%H:%M")
 
-    def cards_html(cards: list[dict]) -> str:
+    def cards_html(cards):
         html = ""
         for c in cards:
             count_label = f"{c['count']} {'пост' if c['count'] == 1 else 'поста' if c['count'] in [2,3,4] else 'постов'}"
@@ -189,57 +208,43 @@ def build_html(design_cards: list[dict], other_cards: list[dict]) -> str:
       color: #1a1a1a;
       padding: 2rem 1rem;
     }}
-    .container {{
-      max-width: 680px;
-      margin: 0 auto;
-    }}
+    .container {{ max-width: 680px; margin: 0 auto; }}
     a {{ color: #378ADD; }}
     a:hover {{ text-decoration: underline; }}
   </style>
 </head>
 <body>
   <div class="container">
-
     <div style="margin-bottom:2.5rem;">
       <p style="font-size:13px;color:#999;margin-bottom:6px;">{date_str}</p>
       <h1 style="font-size:22px;font-weight:500;margin-bottom:8px;color:#1a1a1a;">Дайджест телеграма за день для моей госпожи 👑</h1>
       <p style="font-size:14px;color:#666;">{total_channels} каналов · реклама отфильтрована</p>
     </div>
-
     {design_section}
     {other_section}
-
     <div style="margin-top:2rem;padding-top:1rem;border-top:0.5px solid #e0e0e0;">
       <p style="font-size:12px;color:#aaa;">Сгенерировано в {time_str} · следующий дайджест завтра утром</p>
     </div>
-
   </div>
 </body>
 </html>"""
 
 
-def deploy_to_netlify(html: str, site_id: str, token: str) -> str:
-    """Деплоит index.html на Netlify и возвращает URL."""
-    import urllib.request
-    import zipfile
-    import io
-    import hashlib
+# ─────────────────────────────────────────
+#  NETLIFY + TELEGRAM
+# ─────────────────────────────────────────
 
-    # Создаём zip с index.html
+def deploy_to_netlify(html: str, site_id: str, token: str) -> str:
+    import urllib.request, zipfile, io
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("index.html", html.encode("utf-8"))
     buf.seek(0)
     zip_bytes = buf.read()
-
     url = f"https://api.netlify.com/api/v1/sites/{site_id}/deploys"
     req = urllib.request.Request(
-        url,
-        data=zip_bytes,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/zip",
-        },
+        url, data=zip_bytes,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/zip"},
         method="POST",
     )
     with urllib.request.urlopen(req) as resp:
@@ -251,6 +256,10 @@ async def send_telegram_message(token: str, chat_id: str, text: str):
     bot = Bot(token=token)
     await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
 
+
+# ─────────────────────────────────────────
+#  MAIN
+# ─────────────────────────────────────────
 
 def main():
     print("▶ Запускаю дайджест...")
@@ -286,6 +295,7 @@ def main():
         else:
             other_cards.append(card)
         print(f"     ✓ {title}")
+        time.sleep(1)  # небольшая пауза чтобы не спамить
 
     if not design_cards and not other_cards:
         print("Нет контента для дайджеста.")
@@ -293,11 +303,6 @@ def main():
 
     print("▶ Собираю HTML...")
     html = build_html(design_cards, other_cards)
-
-    # Сохраняем локально для проверки
-    with open("output/index.html", "w", encoding="utf-8") as f:
-        f.write(html)
-    print("  ✓ output/index.html сохранён")
 
     print("▶ Деплою на Netlify...")
     page_url = deploy_to_netlify(html, NETLIFY_SITE_ID, NETLIFY_TOKEN)
