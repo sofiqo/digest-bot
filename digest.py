@@ -33,7 +33,7 @@ OTHER_CHANNELS = [
     "TatFeodoridy", "olga_career", "osoznatorika", "Katerinalengold",
     "notburningout", "svetlana_psyhodietolog", "adhd_pokus",
     "trevozhnie_sirniky", "luv_coach", "DissectedPsychologist",
-    "zeniasofronovHQ", "turyatka", "concertzaal", "coachpolishuk", "ohwrld",
+    "zeniasofronovHQ", "turyatka", "concertzaal", "coachpolishuk", "ohwrld", "retrogrademercury",
 ]
 
 HEADERS = {
