@@ -26,14 +26,18 @@ DESIGN_CHANNELS = [
     "poledsgn", "DesignDictatorship", "designpub", "meow_design",
     "aniaamelnik", "mozhno", "chem_dokazhesh", "product_thoughts",
     "microcopy", "slashdesigner", "neural_prosecco", "AI_Handler",
-    "girlsvibecode", "imageryna", "iiiiiiija", "ProductsAndStartups",
+    "girlsvibecode", "imageryna", "iiiiiiija", "ProductsAndStartups", "study_kvo", "meow_design",
 ]
 
 OTHER_CHANNELS = [
     "TatFeodoridy", "olga_career", "osoznatorika", "Katerinalengold",
-    "notburningout", "svetlana_psyhodietolog", "adhd_pokus",
+    "notburningout", "adhd_pokus",
     "trevozhnie_sirniky", "luv_coach", "DissectedPsychologist",
-    "zeniasofronovHQ", "turyatka", "concertzaal", "coachpolishuk", "ohwrld", "retrogrademercury",
+    "zeniasofronovHQ", "turyatka", "concertzaal", "coachpolishuk", "ohwrld", "myachPRO",
+]
+
+WTF_CHANNELS = [
+    "varlamov_news",
 ]
 
 HEADERS = {
@@ -150,13 +154,13 @@ def summarise_channel(client: anthropic.Anthropic, channel: str, posts: list[dic
 #  HTML
 # ─────────────────────────────────────────
 
-def build_html(design_cards: list[dict], other_cards: list[dict]) -> str:
+def build_html(design_cards: list[dict], other_cards: list[dict], wtf_cards: list[dict]) -> str:
     today = datetime.now()
     weekdays_ru = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
     months_ru   = ["января","февраля","марта","апреля","мая","июня",
                    "июля","августа","сентября","октября","ноября","декабря"]
     date_str = f"{weekdays_ru[today.weekday()]}, {today.day} {months_ru[today.month-1]} {today.year}"
-    total_channels = len(design_cards) + len(other_cards)
+    total_channels = len(design_cards) + len(other_cards) + len(wtf_cards)
     time_str = today.strftime("%H:%M")
 
     def cards_html(cards):
@@ -179,7 +183,7 @@ def build_html(design_cards: list[dict], other_cards: list[dict]) -> str:
         design_section = f"""
       <div style="margin-bottom:2.5rem;">
         <div style="margin-bottom:1.25rem;padding-bottom:10px;border-bottom:0.5px solid #e0e0e0;">
-          <h2 style="font-size:18px;font-weight:500;margin:0;color:#1a1a1a;">Чем порадуют сегодня новости дизайна</h2>
+          <h2 style="font-size:18px;font-weight:500;margin:0;color:#1a1a1a;">Новости дизайна</h2>
         </div>
         {cards_html(design_cards)}
       </div>"""
@@ -192,6 +196,16 @@ def build_html(design_cards: list[dict], other_cards: list[dict]) -> str:
           <h2 style="font-size:18px;font-weight:500;margin:0;color:#1a1a1a;">Что ещё творится в мире</h2>
         </div>
         {cards_html(other_cards)}
+      </div>"""
+
+    wtf_section = ""
+    if wtf_cards:
+        wtf_section = f"""
+      <div style="margin-bottom:2.5rem;">
+        <div style="margin-bottom:1.25rem;padding-bottom:10px;border-bottom:0.5px solid #e0e0e0;">
+          <h2 style="font-size:18px;font-weight:500;margin:0;color:#1a1a1a;">Ну и пиздец</h2>
+        </div>
+        {cards_html(wtf_cards)}
       </div>"""
 
     return f"""<!DOCTYPE html>
@@ -217,11 +231,12 @@ def build_html(design_cards: list[dict], other_cards: list[dict]) -> str:
   <div class="container">
     <div style="margin-bottom:2.5rem;">
       <p style="font-size:13px;color:#999;margin-bottom:6px;">{date_str}</p>
-      <h1 style="font-size:22px;font-weight:500;margin-bottom:8px;color:#1a1a1a;">Дайджест телеграма за день для моей госпожи 👑</h1>
+      <h1 style="font-size:22px;font-weight:500;margin-bottom:8px;color:#1a1a1a;">Что нового в телеграме</h1>
       <p style="font-size:14px;color:#666;">{total_channels} каналов · реклама отфильтрована</p>
     </div>
     {design_section}
     {other_section}
+    {wtf_section}
     <div style="margin-top:2rem;padding-top:1rem;border-top:0.5px solid #e0e0e0;">
       <p style="font-size:12px;color:#aaa;">Сгенерировано в {time_str} · следующий дайджест завтра утром</p>
     </div>
@@ -292,9 +307,9 @@ def main():
 
     design_cards = []
     other_cards  = []
+    wtf_cards    = []
 
-    all_channels = [("design", ch) for ch in DESIGN_CHANNELS] + \
-                   [("other",  ch) for ch in OTHER_CHANNELS]
+    all_channels = [("design", ch) for ch in DESIGN_CHANNELS] +                    [("other",  ch) for ch in OTHER_CHANNELS] +                    [("wtf",    ch) for ch in WTF_CHANNELS]
 
     for group, username in all_channels:
         print(f"  → {username}")
@@ -317,8 +332,10 @@ def main():
         }
         if group == "design":
             design_cards.append(card)
-        else:
+        elif group == "other":
             other_cards.append(card)
+        else:
+            wtf_cards.append(card)
         print(f"     ✓ {title}")
         time.sleep(1)  # небольшая пауза чтобы не спамить
 
@@ -327,7 +344,7 @@ def main():
         return
 
     print("▶ Собираю HTML...")
-    html = build_html(design_cards, other_cards)
+    html = build_html(design_cards, other_cards, wtf_cards)
 
     print("▶ Деплою на Netlify...")
     page_url = deploy_to_netlify(html, NETLIFY_SITE_ID, NETLIFY_TOKEN)
