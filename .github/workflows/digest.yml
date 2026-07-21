@@ -2,7 +2,7 @@ name: Daily Digest
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # 06:00 UTC = 09:00 МСК (с запасом на задержку GitHub)
+    - cron: '0 4 * * *'  # 04:00 UTC = 07:00 МСК
   workflow_dispatch:       # кнопка ручного запуска
 
 jobs:
