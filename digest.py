@@ -30,14 +30,20 @@ DESIGN_CHANNELS = [
 ]
 
 OTHER_CHANNELS = [
-    "TatFeodoridy", "olga_career", "osoznatorika", "Katerinalengold",
+    "olga_career", "osoznatorika", "Katerinalengold",
     "notburningout", "adhd_pokus",
     "trevozhnie_sirniky", "luv_coach", "DissectedPsychologist",
-    "zeniasofronovHQ", "turyatka", "concertzaal", "coachpolishuk", "ohwrld", "myachPRO",
+    "zeniasofronovHQ", "turyatka", "concertzaal", "coachpolishuk", "myachPRO", "yurydud",
 ]
 
 WTF_CHANNELS = [
     "varlamov_news",
+]
+
+EMIGRATION_CHANNELS = [
+    "ArkHelp", "emigriceps_spain", "duditagain", "Psymigration",
+    "emigriceps", "Oreshka_in_London", "smenastation", "iworldcom",
+    "spain_simple", "ohwrld",
 ]
 
 HEADERS = {
@@ -154,13 +160,13 @@ def summarise_channel(client: anthropic.Anthropic, channel: str, posts: list[dic
 #  HTML
 # ─────────────────────────────────────────
 
-def build_html(design_cards: list[dict], other_cards: list[dict], wtf_cards: list[dict]) -> str:
+def build_html(design_cards: list[dict], other_cards: list[dict], emigration_cards: list[dict], wtf_cards: list[dict]) -> str:
     today = datetime.now()
     weekdays_ru = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
     months_ru   = ["января","февраля","марта","апреля","мая","июня",
                    "июля","августа","сентября","октября","ноября","декабря"]
     date_str = f"{weekdays_ru[today.weekday()]}, {today.day} {months_ru[today.month-1]} {today.year}"
-    total_channels = len(design_cards) + len(other_cards) + len(wtf_cards)
+    total_channels = len(design_cards) + len(other_cards) + len(emigration_cards) + len(wtf_cards)
     time_str = today.strftime("%H:%M")
 
     def cards_html(cards):
@@ -196,6 +202,16 @@ def build_html(design_cards: list[dict], other_cards: list[dict], wtf_cards: lis
           <h2 style="font-size:18px;font-weight:500;margin:0;color:#1a1a1a;">Что ещё творится в мире</h2>
         </div>
         {cards_html(other_cards)}
+      </div>"""
+
+    emigration_section = ""
+    if emigration_cards:
+        emigration_section = f"""
+      <div style="margin-bottom:2.5rem;">
+        <div style="margin-bottom:1.25rem;padding-bottom:10px;border-bottom:0.5px solid #e0e0e0;">
+          <h2 style="font-size:18px;font-weight:500;margin:0;color:#1a1a1a;">Эмигрейшн ✈️</h2>
+        </div>
+        {cards_html(emigration_cards)}
       </div>"""
 
     wtf_section = ""
@@ -236,6 +252,7 @@ def build_html(design_cards: list[dict], other_cards: list[dict], wtf_cards: lis
     </div>
     {design_section}
     {other_section}
+    {emigration_section}
     {wtf_section}
     <div style="margin-top:2rem;padding-top:1rem;border-top:0.5px solid #e0e0e0;">
       <p style="font-size:12px;color:#aaa;">Сгенерировано в {time_str} · следующий дайджест завтра утром</p>
@@ -305,11 +322,12 @@ def main():
     print("▶ Запускаю дайджест...")
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-    design_cards = []
-    other_cards  = []
-    wtf_cards    = []
+    design_cards      = []
+    other_cards       = []
+    wtf_cards         = []
+    emigration_cards  = []
 
-    all_channels = [("design", ch) for ch in DESIGN_CHANNELS] +                    [("other",  ch) for ch in OTHER_CHANNELS] +                    [("wtf",    ch) for ch in WTF_CHANNELS]
+    all_channels = [("design",     ch) for ch in DESIGN_CHANNELS] +                    [("other",      ch) for ch in OTHER_CHANNELS] +                    [("emigration", ch) for ch in EMIGRATION_CHANNELS] +                    [("wtf",        ch) for ch in WTF_CHANNELS]
 
     for group, username in all_channels:
         print(f"  → {username}")
@@ -334,6 +352,8 @@ def main():
             design_cards.append(card)
         elif group == "other":
             other_cards.append(card)
+        elif group == "emigration":
+            emigration_cards.append(card)
         else:
             wtf_cards.append(card)
         print(f"     ✓ {title}")
@@ -344,7 +364,7 @@ def main():
         return
 
     print("▶ Собираю HTML...")
-    html = build_html(design_cards, other_cards, wtf_cards)
+    html = build_html(design_cards, other_cards, emigration_cards, wtf_cards)
 
     print("▶ Деплою на Netlify...")
     page_url = deploy_to_netlify(html, NETLIFY_SITE_ID, NETLIFY_TOKEN)
