@@ -16,8 +16,8 @@ import asyncio
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "ВАШ_ТОКЕН_БОТА")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID",   "ВАШ_CHAT_ID")
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY",  "ВАШ_ANTHROPIC_KEY")
-NETLIFY_SITE_ID    = os.environ.get("NETLIFY_SITE_ID",    "ВАШ_SITE_ID")
-NETLIFY_TOKEN      = os.environ.get("NETLIFY_TOKEN",      "ВАШ_NETLIFY_TOKEN")
+GITHUB_REPO        = os.environ.get("GITHUB_REPO",        "sofiqo/digest-bot")
+GITHUB_TOKEN       = os.environ.get("GITHUB_TOKEN",       "")
 
 DESIGN_CHANNELS = [
     "pdigest", "figmadesign", "nowhow", "design_translator", "conceptui",
@@ -266,48 +266,52 @@ def build_html(design_cards: list[dict], other_cards: list[dict], emigration_car
 #  NETLIFY + TELEGRAM
 # ─────────────────────────────────────────
 
-def deploy_to_netlify(html: str, site_id: str, token: str) -> str:
-    import urllib.request, hashlib
+def deploy_to_github_pages(html: str, repo: str, token: str) -> str:
+    """Деплоит index.html в ветку gh-pages через GitHub API."""
+    import urllib.request, base64
 
-    html_bytes = html.encode("utf-8")
-    sha1 = hashlib.sha1(html_bytes).hexdigest()
+    html_b64 = base64.b64encode(html.encode("utf-8")).decode("utf-8")
+    api_base = f"https://api.github.com/repos/{repo}/contents/index.html"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json",
+    }
 
-    deploy_payload = json.dumps({
-        "files": {"/index.html": sha1},
-        "async": False
-    }).encode("utf-8")
-
-    req1 = urllib.request.Request(
-        f"https://api.netlify.com/api/v1/sites/{site_id}/deploys",
-        data=deploy_payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req1) as resp:
-        deploy_data = json.loads(resp.read())
-
-    deploy_id = deploy_data["id"]
-    required = deploy_data.get("required", [])
-    print(f"     [debug] deploy_id={deploy_id} required={required}")
-
-    if required:
-        req2 = urllib.request.Request(
-            f"https://api.netlify.com/api/v1/deploys/{deploy_id}/files/index.html",
-            data=html_bytes,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "text/html; charset=utf-8",
-            },
-            method="PUT",
+    sha = None
+    try:
+        req = urllib.request.Request(
+            api_base + "?ref=gh-pages",
+            headers=headers,
+            method="GET",
         )
-        with urllib.request.urlopen(req2) as resp:
-            resp.read()
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read())
+            sha = data.get("sha")
+    except Exception:
+        pass
 
-    return deploy_data.get("ssl_url") or deploy_data.get("url") or ""
+    payload = {
+        "message": f"digest update {__import__('datetime').datetime.now().strftime('%Y-%m-%d')}",
+        "content": html_b64,
+        "branch": "gh-pages",
+    }
+    if sha:
+        payload["sha"] = sha
 
+    req2 = urllib.request.Request(
+        api_base,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="PUT",
+    )
+    with urllib.request.urlopen(req2) as resp:
+        resp.read()
+
+    username = repo.split("/")[0]
+    reponame = repo.split("/")[1]
+    return f"https://{username}.github.io/{reponame}/"
 
 async def send_telegram_message(token: str, chat_id: str, text: str):
     bot = Bot(token=token)
@@ -367,7 +371,7 @@ def main():
     html = build_html(design_cards, other_cards, emigration_cards, wtf_cards)
 
     print("▶ Деплою на Netlify...")
-    page_url = deploy_to_netlify(html, NETLIFY_SITE_ID, NETLIFY_TOKEN)
+    page_url = deploy_to_github_pages(html, GITHUB_REPO, GITHUB_TOKEN)
     print(f"  ✓ {page_url}")
 
     print("▶ Отправляю в Telegram...")
