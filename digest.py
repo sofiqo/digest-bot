@@ -26,7 +26,7 @@ DESIGN_CHANNELS = [
     "poledsgn", "DesignDictatorship", "designpub", "meow_design",
     "aniaamelnik", "mozhno", "chem_dokazhesh", "product_thoughts",
     "microcopy", "slashdesigner", "neural_prosecco", "AI_Handler",
-    "girlsvibecode", "imageryna", "iiiiiiija", "ProductsAndStartups", "study_kvo", "meow_design",
+    "girlsvibecode", "imageryna", "iiiiiiija", "ProductsAndStartups", "study_kvo",
 ]
 
 OTHER_CHANNELS = [
