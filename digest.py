@@ -138,7 +138,7 @@ def summarise_channel(client: anthropic.Anthropic, channel: str, posts: list[dic
 {{"skip": false, "summary": "текст саммари", "first_post_link": "ссылка на первый нерекламный пост"}}"""
 
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-haiku-4-5-20251001",
         max_tokens=500,
         messages=[{"role": "user", "content": prompt}]
     )
